@@ -1,0 +1,13 @@
+{
+  "name": "kockdental-pdf-service",
+  "version": "1.0.0",
+  "description": "PDF Generator for KockDental",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "pdf-lib": "^1.17.1"
+  }
+}
