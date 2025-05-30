@@ -2,8 +2,10 @@ const express = require('express')
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 const fs = require('fs')
 const path = require('path')
+const cors = require('cors')
 
 const app = express()
+app.use(cors())
 app.use(express.json())
 
 app.use('/public', express.static(path.join(__dirname, 'public')))
@@ -50,7 +52,7 @@ app.post('/generate-pdf', async (req, res) => {
     height: 50,
   })
 
-  page.drawText('KOCKDENTAL', {
+  page.drawText('DENTAL', {
     x: 110,
     y: height - 60,
     size: 20,
