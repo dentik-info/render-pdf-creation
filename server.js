@@ -53,11 +53,12 @@ app.post('/generate-pdf', async (req, res) => {
   }
   const logoImage = await pdfDoc.embedPng(logoBytes)
 
+  // === HEADER: Logo, Firmenname, Adresszeile, Patientendaten, Tabellenkopf ===
   // Logo mittig oben, größere und bessere Qualität
   const logoWidth = 120;
-  const logoHeight = 55;
+  const logoHeight = 50;
   const logoX = (width - logoWidth) / 2;
-  const logoY = height - 80;
+  const logoY = height - 60;
   page.drawImage(logoImage, {
     x: logoX,
     y: logoY,
@@ -69,7 +70,7 @@ app.post('/generate-pdf', async (req, res) => {
   page.drawText(sanitizeText(''), {
     x: width / 2 - 50,
     y: logoY - 40, // Abstand für zwei Leerzeilen
-    size: 18,
+    size: 16, // vorher 17
     font,
     color: rgb(0, 0, 0),
   });
@@ -86,18 +87,18 @@ app.post('/generate-pdf', async (req, res) => {
   page.drawText(addressText, {
     x: marginLeft,
     y: addressLineY,
-    size: 12,
+    size: 10, // vorher 11
     font,
     color: rgb(0, 0, 0),
   });
   // Abrechnungsnummer rechts
   const abrechnungsLabel = 'Abrechnungs-Nr.:';
   const abrechnungsText = `${abrechnungsLabel} ${abrechnungsNr}`;
-  const abrechnungsWidth = font.widthOfTextAtSize(abrechnungsText, 12);
+  const abrechnungsWidth = font.widthOfTextAtSize(abrechnungsText, 10); // vorher 11
   page.drawText(abrechnungsText, {
     x: width - marginRight - abrechnungsWidth,
     y: addressLineY,
-    size: 12,
+    size: 10, // vorher 11
     font,
     color: rgb(0, 0, 0),
   });
@@ -124,7 +125,7 @@ app.post('/generate-pdf', async (req, res) => {
     page.drawText(sanitizeText(line), {
       x: marginLeft,
       y: table2Y - i * 14,
-      size: 12,
+      size: 10, // vorher 11
       font,
       color: rgb(0, 0, 0),
     });
@@ -134,21 +135,21 @@ app.post('/generate-pdf', async (req, res) => {
   page.drawText('Patientenname: ' + patientName, {
     x: marginLeft + colWidth2 + 10,
     y: table2Y,
-    size: 12,
+    size: 10, // vorher 11
     font,
     color: rgb(0, 0, 0),
   });
   page.drawText('Dieses Produkt ist ausschließlich', {
     x: marginLeft + colWidth2 + 10,
     y: table2Y - 18,
-    size: 10,
+    size: 8, // vorher 9
     font,
     color: rgb(0, 0, 0),
   });
   page.drawText('für Patient ' + patientName + ' gedacht.', {
     x: marginLeft + colWidth2 + 10,
     y: table2Y - 18 - 12, // 12pt Abstand zur nächsten Zeile
-    size: 10,
+    size: 8, // vorher 9
     font,
     color: rgb(0, 0, 0),
   });
@@ -162,7 +163,7 @@ app.post('/generate-pdf', async (req, res) => {
   page.drawText('Beleg-Nr.: 2025.05.00005', {
     x: marginLeft,
     y: table3Y,
-    size: 12,
+    size: 10, // vorher 11
     font,
     color: rgb(0, 0, 0),
   });
@@ -174,14 +175,14 @@ app.post('/generate-pdf', async (req, res) => {
     page.drawText(table3Headers[i], {
       x: marginLeft + leftHalf + i * colWidth3 + 5,
       y: table3Y,
-      size: 10,
+      size: 8, // vorher 9
       font: boldFont3,
       color: rgb(0, 0, 0),
     });
     page.drawText(table3Values[i], {
       x: marginLeft + leftHalf + i * colWidth3 + 5,
       y: table3Y - 14,
-      size: 11, // vorher 12, jetzt eine kleiner
+      size: 9, // vorher 10
       font,
       color: rgb(0, 0, 0),
     });
@@ -197,14 +198,14 @@ app.post('/generate-pdf', async (req, res) => {
     page.drawText(table4Headers[i], {
       x: marginLeft + i * colWidth4,
       y: table4Y,
-      size: 10,
+      size: 8, // vorher 9
       font: boldFont,
       color: rgb(0, 0, 0),
     });
     page.drawText(table4Values[i], {
       x: marginLeft + i * colWidth4,
       y: table4Y - 14,
-      size: 10, // eine Schriftgröße kleiner als vorher (vorher 12)
+      size: 8, // vorher 9
       font,
       color: rgb(0, 0, 0),
     });
@@ -217,11 +218,20 @@ app.post('/generate-pdf', async (req, res) => {
   page.drawText(sanitizeText('KI-genierter Kostenplan, Irrtümer vorbehalten, bei Unklarheiten, rufen Sie uns an.'), {
     x: marginLeft, // linksbündig
     y: kostenplanY,
-    size: 12, // kleinere Schriftgröße
+    size: 10, // vorher 11
     font: boldItalicFont,
     color: rgb(0, 0, 0),
   });
+  // === ENDE HEADER ===
 
+
+
+  //Hier kommt der markdown-Text rein:
+
+
+
+
+  // === BODY: Markdown-Blöcke (Text, Überschriften, Tabellen) ===
   // === 6. Body wie bisher, aber Y-Startpunkt anpassen ===
   let y = kostenplanY - 30;
   const minFontSize = 8; // Minimal zulässige Schriftgröße für Tabellen
@@ -372,8 +382,9 @@ app.post('/generate-pdf', async (req, res) => {
       y -= 6;
     }
   });
+  // === ENDE BODY ===
 
-  // === 7. Fußleiste mit 4 Spalten ===
+  // === FOOTER: Fußleiste mit 4 Spalten ===
   const footerY = 40;
   const footerColWidth = (width - marginLeft - marginRight) / 4;
   const footerTexts = [
@@ -391,6 +402,7 @@ app.post('/generate-pdf', async (req, res) => {
       color: rgb(0.2, 0.2, 0.2),
     });
   }
+  // === ENDE FOOTER ===
 
 
   const pdfBytes = await pdfDoc.save()
@@ -411,7 +423,7 @@ app.post('/generate-pdf', async (req, res) => {
     form.append('date', dateStr);
 
     await axios.post(
-      'https://hook.eu2.make.com/qs9i03fn7bvx2mhqr8xum4x6cbjq1kbd',
+      'https://hook.eu2.make.com/rv7t11k1wvhnmruq6txgd3iw1ol2or8l',
       form,
       {
         headers: form.getHeaders()
