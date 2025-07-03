@@ -5,6 +5,7 @@ const path = require('path')
 const cors = require('cors')
 const markdownIt = require('markdown-it');
 const md = markdownIt();
+const axios = require('axios'); // <-- axios global importieren
 
 const app = express()
 app.use(cors())
@@ -236,6 +237,18 @@ app.post('/generate-pdf', async (req, res) => {
   let y = kostenplanY - 30;
   const minFontSize = 8; // Minimal zulässige Schriftgröße für Tabellen
   const maxWidth = 500; // Maximale Breite für Textumbruch in Tabellen und Absätzen
+  const minY = 70; // Unterer Rand für Seitenumbruch
+
+  // Footer-Variablen müssen vor den Hilfsfunktionen stehen!
+  const footerY = 40;
+  const footerColWidth = (width - marginLeft - marginRight) / 4;
+  const footerTexts = [
+    'Dental Labor Gerd Kock Betriebs GmbH & Co. KG',
+    'Postfach 1161',
+    '49125 Wallenhorst',
+    'www.dentallabor-kock.de',
+  ];
+
   // Hilfsfunktion für Zeilenumbruch in Tabellenzellen
   function wrapText(text, font, fontSize, maxWidth) {
     const words = text.split(' ');
@@ -255,11 +268,156 @@ app.post('/generate-pdf', async (req, res) => {
     return lines;
   }
 
+  // Hilfsfunktion: Header auf neuer Seite zeichnen
+  function drawHeader(page) {
+    page.drawImage(logoImage, {
+      x: logoX,
+      y: logoY,
+      width: logoWidth,
+      height: logoHeight,
+    });
+    page.drawText(sanitizeText(''), {
+      x: width / 2 - 50,
+      y: logoY - 40,
+      size: 16,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    page.drawText(addressText, {
+      x: marginLeft,
+      y: addressLineY,
+      size: 10,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    const abrechnungsText = `${abrechnungsLabel} ${abrechnungsNr}`;
+    const abrechnungsWidth = font.widthOfTextAtSize(abrechnungsText, 10);
+    page.drawText(abrechnungsText, {
+      x: width - marginRight - abrechnungsWidth,
+      y: addressLineY,
+      size: 10,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    page.drawLine({
+      start: { x: marginLeft, y: addressLineY - 3 },
+      end: { x: width - marginRight, y: addressLineY - 3 },
+      thickness: 1,
+      color: rgb(0, 0, 0),
+    });
+    // 2. Tabelle: Adresse & Patientendaten
+    addressLines.forEach((line, i) => {
+      page.drawText(sanitizeText(line), {
+        x: marginLeft,
+        y: table2Y - i * 14,
+        size: 10,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    });
+    page.drawText('Patientenname: ' + patientName, {
+      x: marginLeft + colWidth2 + 10,
+      y: table2Y,
+      size: 10,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    page.drawText('Dieses Produkt ist ausschließlich', {
+      x: marginLeft + colWidth2 + 10,
+      y: table2Y - 18,
+      size: 8,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    page.drawText('für Patient ' + patientName + ' gedacht.', {
+      x: marginLeft + colWidth2 + 10,
+      y: table2Y - 18 - 12,
+      size: 8,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    // 3. Tabelle
+    page.drawText('Beleg-Nr.: 2025.05.00005', {
+      x: marginLeft,
+      y: table3Y,
+      size: 10,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    for (let i = 0; i < 4; i++) {
+      page.drawText(table3Headers[i], {
+        x: marginLeft + leftHalf + i * colWidth3 + 5,
+        y: table3Y,
+        size: 8,
+        font: boldFont3,
+        color: rgb(0, 0, 0),
+      });
+      page.drawText(table3Values[i], {
+        x: marginLeft + leftHalf + i * colWidth3 + 5,
+        y: table3Y - 14,
+        size: 9,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    }
+    // 4. Tabelle
+    for (let i = 0; i < 4; i++) {
+      page.drawText(table4Headers[i], {
+        x: marginLeft + i * colWidth4,
+        y: table4Y,
+        size: 8,
+        font: boldFont,
+        color: rgb(0, 0, 0),
+      });
+      page.drawText(table4Values[i], {
+        x: marginLeft + i * colWidth4,
+        y: table4Y - 14,
+        size: 8,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    }
+    // Überschrift Kostenplan
+    page.drawText(sanitizeText('KI-genierter Kostenplan, Irrtümer vorbehalten, bei Unklarheiten, rufen Sie uns an.'), {
+      x: marginLeft,
+      y: kostenplanY,
+      size: 10,
+      font: boldItalicFont,
+      color: rgb(0, 0, 0),
+    });
+  }
+
+  // Hilfsfunktion: Footer auf neuer Seite zeichnen
+  function drawFooter(page) {
+    for (let i = 0; i < 4; i++) {
+      page.drawText(footerTexts[i], {
+        x: marginLeft + i * footerColWidth,
+        y: footerY,
+        size: 9,
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+    }
+  }
+
+  // Hilfsfunktion: Seitenumbruch
+  function addNewPage() {
+    const newPage = pdfDoc.addPage([width, height]);
+    drawHeader(newPage);
+    drawFooter(newPage);
+    return newPage;
+  }
+
+  // Initial Header/Footer auf erster Seite
+  drawHeader(page);
+  drawFooter(page);
+
+  let currentPage = page;
+  y = kostenplanY - 30;
+  let pageCount = 1;
+
   // Markdown in Blöcke zerlegen (Text, Überschrift, Tabelle)
   const cheerio = require('cheerio');
-  //Axios hier oben
-  const axios = require('axios');
-  const FormData = require('form-data');
   const $ = cheerio.load(html);
   const blocks = [];
   $('body').children().each((i, el) => {
@@ -285,114 +443,172 @@ app.post('/generate-pdf', async (req, res) => {
 
   // Blöcke nacheinander ins PDF schreiben
   blocks.forEach(block => {
+    // Hilfsfunktion: Platzbedarf schätzen
+    function estimateBlockHeight(block) {
+      if (block.type === 'heading') {
+        let size = 18 - (block.level - 1) * 2;
+        if (size < 10) size = 10;
+        return size + 10;
+      } else if (block.type === 'paragraph') {
+        let size = 12;
+        const lines = wrapText(sanitizeText(block.text), font, size, maxWidth);
+        return lines.length * (size + 0.5) + 2;
+      } else if (block.type === 'table') {
+        // Einheitliche Schriftgröße für Tabellen mit "Nummer" und "Menge"
+        let fontSize = 12;
+        if (block.table[0][0] === 'Nummer' && block.table[0][1] === 'Menge') {
+          fontSize = 10;
+        } else if (block.table.length > 10 || block.table[0].length > 5) {
+          fontSize = 9;
+        }
+        if (fontSize < minFontSize) fontSize = minFontSize;
+        let colWidths;
+        if (block.table[0].includes('Bezeichnung')) {
+          colWidths = [70, 50, 220, 80, 80];
+        } else if (block.table[0].length === 5) {
+          colWidths = [70, 50, 220, 80, 80];
+        } else {
+          colWidths = Array(block.table[0].length).fill(maxWidth / block.table[0].length);
+        }
+        let totalHeight = 0;
+        block.table.forEach((row) => {
+          const wrappedCells = row.map((cell, idx) => wrapText(sanitizeText(cell), font, fontSize, colWidths[idx] - 4));
+          const maxLines = Math.max(...wrappedCells.map(lines => lines.length));
+          totalHeight += maxLines * (fontSize + 1) + 1;
+        });
+        totalHeight += 4;
+        return totalHeight;
+      }
+      return 16;
+    }
+
+    // Seitenumbruch prüfen
+    const blockHeight = estimateBlockHeight(block);
+    if (y - blockHeight < minY) {
+      // Hinweis auf vorheriger Seite
+      currentPage.drawText('Fortsetzung auf nächster Seite', {
+        x: width - marginRight - 180,
+        y: minY + 10,
+        size: 10,
+        font: boldFont,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      // Neue Seite beginnen
+      currentPage = addNewPage();
+      y = kostenplanY - 30;
+      pageCount++;
+    }
+
+    // Block wie bisher zeichnen, aber auf currentPage und y
     if (block.type === 'heading') {
       let size = 18 - (block.level - 1) * 2;
       if (size < 10) size = 10;
-      // Für ## (level 2) fette Schrift und Leerzeile davor
       let headingFont = font;
       if (block.level === 2) {
         headingFont = boldFont;
-        y -= size + 4; // Leerzeile vor Überschrift (Abstand)
+        y -= size + 2;
       }
-      page.drawText(sanitizeText(block.text), {
+      currentPage.drawText(sanitizeText(block.text), {
         x: 40,
         y,
         size,
         font: headingFont,
         color: rgb(0, 0, 0),
       });
-      y -= size + 8;
+      y -= size + 6;
     } else if (block.type === 'paragraph') {
       let size = 12;
       const lines = wrapText(sanitizeText(block.text), font, size, maxWidth);
       lines.forEach(line => {
-        // Prüfen, ob die Zeile mit "Summe" beginnt
-        const isSumme = line.trim().startsWith('Summe');
-        // Prüfen, ob die Zeile mit "Endbetrag" beginnt
-        const isEndbetrag = line.trim().startsWith('Endbetrag');
-        page.drawText(sanitizeText(line), {
-          x: 40,
-          y,
-          size,
-          font: isEndbetrag || isSumme ? boldFont : font,
-          color: rgb(0, 0, 0),
-        });
-        // Unterstreichung für Endbetrag: gesamte Zeile
-        if (isEndbetrag) {
-          const textWidth = boldFont.widthOfTextAtSize(sanitizeText(line), size);
-          page.drawLine({
-            start: { x: 40, y: y - 2 },
-            end: { x: 40 + textWidth, y: y - 2 },
-            thickness: 1,
+        // Prüfen auf "Oberkiefer" oder "Unterkiefer"
+        if (line.trim() === 'Oberkiefer' || line.trim() === 'Unterkiefer') {
+          // kleiner, aber nicht unterstrichen
+          currentPage.drawText(line, {
+            x: 40,
+            y,
+            size: 9,
+            font,
+            color: rgb(0, 0, 0)
+          });
+          y -= 9 + 2;
+        } else {
+          currentPage.drawText(sanitizeText(line), {
+            x: 40,
+            y,
+            size,
+            font,
             color: rgb(0, 0, 0),
           });
+          y -= size + 1;
         }
-        y -= size + 2;
       });
-      y -= 4;
+      y -= 2;
     } else if (block.type === 'table') {
-      // Dynamische Schriftgröße, aber nicht kleiner als minFontSize
+      // Einheitliche Schriftgröße für Tabellen mit "Nummer" und "Menge"
       let fontSize = 12;
-      if (block.table.length > 10 || block.table[0].length > 5) fontSize = 9;
+      if (block.table[0][0] === 'Nummer' && block.table[0][1] === 'Menge') {
+        fontSize = 10;
+      } else if (block.table.length > 10 || block.table[0].length > 5) {
+        fontSize = 9;
+      }
       if (fontSize < minFontSize) fontSize = minFontSize;
-      // Spaltenbreiten individuell anpassen, damit "E-Preis" weiter rechts steht
       let colWidths;
-      if (block.table[0].length === 5) {
-        // Beispiel: 5 Spalten wie in deiner Tabelle
-        colWidths = [70, 50, 180, 80, 80];
+      if (block.table[0].includes('Bezeichnung')) {
+        colWidths = [70, 50, 220, 80, 80];
+      } else if (block.table[0].length === 5) {
+        colWidths = [70, 50, 220, 80, 80];
       } else {
-        // Gleichmäßige Verteilung für andere Tabellen
         colWidths = Array(block.table[0].length).fill(maxWidth / block.table[0].length);
       }
       block.table.forEach((row, i) => {
-        let rowHeight = fontSize + 4;
-        // Zeilenumbruch für jede Zelle berechnen
+        let rowHeight = fontSize + 2;
         const wrappedCells = row.map((cell, idx) => wrapText(sanitizeText(cell), font, fontSize, colWidths[idx] - 4));
         const maxLines = Math.max(...wrappedCells.map(lines => lines.length));
-        rowHeight = maxLines * (fontSize + 2);
-        // Prüfen, ob die erste Zelle mit "Summe" beginnt
+        rowHeight = maxLines * (fontSize + 1);
         const isSummeRow = row[0] && row[0].trim().startsWith('Summe');
         const isEndbetragRow = row[0] && row[0].trim().startsWith('Endbetrag');
         let x = 40;
         for (let j = 0; j < row.length; j++) {
           const lines = wrappedCells[j];
           for (let l = 0; l < lines.length; l++) {
-            page.drawText(sanitizeText(lines[l]), {
-              x: x,
-              y: y - l * (fontSize + 2),
-              size: fontSize,
-              font: (isSummeRow || isEndbetragRow) ? boldFont : font,
-              color: rgb(0, 0, 0)
-            });
+            // Prüfen auf "Oberkiefer" oder "Unterkiefer" in Tabellenzelle
+            if ((lines[l].trim() === 'Oberkiefer' || lines[l].trim() === 'Unterkiefer')) {
+              currentPage.drawText(lines[l], {
+                x: x,
+                y: y - l * (fontSize + 1),
+                size: 9,
+                font,
+                color: rgb(0, 0, 0),
+              });
+            } else {
+              currentPage.drawText(sanitizeText(lines[l]), {
+                x: x,
+                y: y - l * (fontSize + 1),
+                size: fontSize,
+                font: (isSummeRow || isEndbetragRow) ? boldFont : font,
+                color: rgb(0, 0, 0)
+              });
+            }
           }
           x += colWidths[j];
         }
-        // Unterstreichung für Endbetrag-Zeile (gesamte Tabellenbreite, unter erster Zeile)
         if (isEndbetragRow) {
           const underlineWidth = colWidths.reduce((a, b) => a + b, 0);
-          page.drawLine({
+          currentPage.drawLine({
             start: { x: 40, y: y - 2 },
             end: { x: 40 + underlineWidth, y: y - 2 },
             thickness: 1,
             color: rgb(0, 0, 0),
           });
         }
-        y -= rowHeight + 2;
+        y -= rowHeight + 1;
       });
-      y -= 6;
+      y -= 3;
     }
   });
   // === ENDE BODY ===
 
   // === FOOTER: Fußleiste mit 4 Spalten ===
-  const footerY = 40;
-  const footerColWidth = (width - marginLeft - marginRight) / 4;
-  const footerTexts = [
-    'Dental Labor Gerd Kock Betriebs GmbH & Co. KG',
-    'Postfach 1161',
-    '49125 Wallenhorst',
-    'www.dentallabor-kock.de',
-  ];
   for (let i = 0; i < 4; i++) {
     page.drawText(footerTexts[i], {
       x: marginLeft + i * footerColWidth,
@@ -413,6 +629,7 @@ app.post('/generate-pdf', async (req, res) => {
     const pad = n => n.toString().padStart(2, '0');
     const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
     // Send as multipart/form-data to allow multiple fields
+    const FormData = require('form-data');
     const form = new FormData();
     form.append('file', Buffer.from(pdfBytes), {
       filename: 'kostenplan.pdf',
@@ -426,7 +643,9 @@ app.post('/generate-pdf', async (req, res) => {
       'https://hook.eu2.make.com/rv7t11k1wvhnmruq6txgd3iw1ol2or8l',
       form,
       {
-        headers: form.getHeaders()
+        headers: form.getHeaders(),
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
       }
     );
     console.log('PDF sent to webhook successfully.');
