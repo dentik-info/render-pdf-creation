@@ -424,39 +424,54 @@ app.post('/generate-pdf', async (req, res) => {
     if (el.tagName === 'h1' || el.tagName === 'h2' || el.tagName === 'h3') {
       blocks.push({ type: 'heading', level: Number(el.tagName[1]), text: $(el).text() });
     } else if (el.tagName === 'p') {
-      blocks.push({ type: 'paragraph', text: $(el).text() });
+      const text = $(el).text();
+      if (!text.trim().startsWith('Frage:')) { // Absatz überspringen, wenn er mit Frage: beginnt
+        blocks.push({ type: 'paragraph', text });
+      }
     } else if (el.tagName === 'table') {
       // Tabelle in 2D-Array
       const table = [];
       $(el).find('tr').each((i, row) => {
         const rowData = [];
         $(row).find('th, td').each((j, cell) => {
-          rowData.push($(cell).text());
+          let cellText = $(cell).text();
+          if (cellText.trim().startsWith('Frage:')) {
+            cellText = '';
+          }
+          rowData.push(cellText);
         });
-        table.push(rowData);
+        // Nur Zeilen übernehmen, die nicht komplett aus Frage:-Zellen bestehen
+        if (rowData.some(cell => cell.trim() !== '')) {
+          table.push(rowData);
+        }
       });
-      blocks.push({ type: 'table', table });
+      if (table.length > 0) {
+        blocks.push({ type: 'table', table });
+      }
     } else if (el.type === 'text' && $(el).text().trim() !== '') {
-      blocks.push({ type: 'paragraph', text: $(el).text() });
+      const text = $(el).text();
+      if (!text.trim().startsWith('Frage:')) {
+        blocks.push({ type: 'paragraph', text });
+      }
     }
   });
 
   // Blöcke nacheinander ins PDF schreiben
+  let lastHeading = null;
   blocks.forEach(block => {
     // Hilfsfunktion: Platzbedarf schätzen
-    function estimateBlockHeight(block) {
+    function estimateBlockHeight(block, useSmallFont) {
       if (block.type === 'heading') {
         let size = 18 - (block.level - 1) * 2;
         if (size < 10) size = 10;
         return size + 10;
       } else if (block.type === 'paragraph') {
-        let size = 12;
+        let size = useSmallFont ? 10 : 12;
         const lines = wrapText(sanitizeText(block.text), font, size, maxWidth);
         return lines.length * (size + 0.5) + 2;
       } else if (block.type === 'table') {
-        // Einheitliche Schriftgröße für Tabellen mit "Nummer" und "Menge"
         let fontSize = 12;
-        if (block.table[0][0] === 'Nummer' && block.table[0][1] === 'Menge') {
+        if (useSmallFont || (block.table[0][0] === 'Nummer' && block.table[0][1] === 'Menge')) {
           fontSize = 10;
         } else if (block.table.length > 10 || block.table[0].length > 5) {
           fontSize = 9;
@@ -482,8 +497,14 @@ app.post('/generate-pdf', async (req, res) => {
       return 16;
     }
 
+    // Prüfen, ob wir nach einer relevanten Überschrift sind
+    let useSmallFont = false;
+    if (lastHeading && (lastHeading.toLowerCase().includes('material') || lastHeading.toLowerCase().includes('gesamtkosten'))) {
+      useSmallFont = true;
+    }
+
     // Seitenumbruch prüfen
-    const blockHeight = estimateBlockHeight(block);
+    const blockHeight = estimateBlockHeight(block, useSmallFont);
     if (y - blockHeight < minY) {
       // Hinweis auf vorheriger Seite
       currentPage.drawText('Fortsetzung auf nächster Seite', {
@@ -516,18 +537,17 @@ app.post('/generate-pdf', async (req, res) => {
         color: rgb(0, 0, 0),
       });
       y -= size + 6;
+      lastHeading = block.text;
     } else if (block.type === 'paragraph') {
-      let size = 12;
+      let size = useSmallFont ? 10 : 12;
       const lines = wrapText(sanitizeText(block.text), font, size, maxWidth);
       lines.forEach(line => {
-        // Prüfen auf "Oberkiefer" oder "Unterkiefer"
         if (line.trim() === 'Oberkiefer' || line.trim() === 'Unterkiefer') {
-          // kleiner, aber nicht unterstrichen
           currentPage.drawText(line, {
             x: 40,
             y,
             size: 9,
-            font,
+            font: boldFont, // Use bold font for Oberkiefer/Unterkiefer
             color: rgb(0, 0, 0)
           });
           y -= 9 + 2;
@@ -544,9 +564,8 @@ app.post('/generate-pdf', async (req, res) => {
       });
       y -= 2;
     } else if (block.type === 'table') {
-      // Einheitliche Schriftgröße für Tabellen mit "Nummer" und "Menge"
       let fontSize = 12;
-      if (block.table[0][0] === 'Nummer' && block.table[0][1] === 'Menge') {
+      if (useSmallFont || (block.table[0][0] === 'Nummer' && block.table[0][1] === 'Menge')) {
         fontSize = 10;
       } else if (block.table.length > 10 || block.table[0].length > 5) {
         fontSize = 9;
@@ -567,17 +586,18 @@ app.post('/generate-pdf', async (req, res) => {
         rowHeight = maxLines * (fontSize + 1);
         const isSummeRow = row[0] && row[0].trim().startsWith('Summe');
         const isEndbetragRow = row[0] && row[0].trim().startsWith('Endbetrag');
+        // Check for header row: Nummer, Menge, Bezeichnung
+        const isHeaderUnderline = row.includes('Nummer') && row.includes('Menge') && row.includes('Bezeichnung');
         let x = 40;
         for (let j = 0; j < row.length; j++) {
           const lines = wrappedCells[j];
           for (let l = 0; l < lines.length; l++) {
-            // Prüfen auf "Oberkiefer" oder "Unterkiefer" in Tabellenzelle
             if ((lines[l].trim() === 'Oberkiefer' || lines[l].trim() === 'Unterkiefer')) {
               currentPage.drawText(lines[l], {
                 x: x,
                 y: y - l * (fontSize + 1),
                 size: 9,
-                font,
+                font: boldFont, // Use bold font for Oberkiefer/Unterkiefer in tables
                 color: rgb(0, 0, 0),
               });
             } else {
@@ -594,6 +614,17 @@ app.post('/generate-pdf', async (req, res) => {
         }
         if (isEndbetragRow) {
           const underlineWidth = colWidths.reduce((a, b) => a + b, 0);
+          currentPage.drawLine({
+            start: { x: 40, y: y - 2 },
+            end: { x: 40 + underlineWidth, y: y - 2 },
+            thickness: 1,
+            color: rgb(0, 0, 0),
+          });
+        }
+        // Draw underline for header row (Nummer, Menge, Bezeichnung)
+        if (isHeaderUnderline) {
+          const underlineWidth = colWidths.reduce((a, b) => a + b, 0);
+          // Draw the underline just below the header row, right after drawing the header text
           currentPage.drawLine({
             start: { x: 40, y: y - 2 },
             end: { x: 40 + underlineWidth, y: y - 2 },
