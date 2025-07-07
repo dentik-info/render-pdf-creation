@@ -389,7 +389,22 @@ app.post('/generate-pdf', async (req, res) => {
 
   // Hilfsfunktion: Footer auf neuer Seite zeichnen
   function drawFooter(page) {
-    for (let i = 0; i < 4; i++) {
+    // Erste Spalte: Text untereinander
+    const footerFirstColLines = [
+      'Dental Labor Gerd Kock',
+      'Betriebs GmbH & Co. KG'
+    ];
+    for (let l = 0; l < footerFirstColLines.length; l++) {
+      page.drawText(footerFirstColLines[l], {
+        x: marginLeft,
+        y: footerY - l * 10, // 10pt Abstand zwischen den Zeilen
+        size: 9,
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+    }
+    // Restliche Spalten wie gehabt
+    for (let i = 1; i < 4; i++) {
       page.drawText(footerTexts[i], {
         x: marginLeft + i * footerColWidth,
         y: footerY,
@@ -410,7 +425,29 @@ app.post('/generate-pdf', async (req, res) => {
 
   // Initial Header/Footer auf erster Seite
   drawHeader(page);
-  drawFooter(page);
+  // Footer auf erster Seite: erste Spalte untereinander
+  const footerFirstColLines = [
+    'Dental Labor Gerd Kock',
+    'Betriebs GmbH & Co. KG'
+  ];
+  for (let l = 0; l < footerFirstColLines.length; l++) {
+    page.drawText(footerFirstColLines[l], {
+      x: marginLeft,
+      y: footerY - l * 10,
+      size: 9,
+      font,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+  }
+  for (let i = 1; i < 4; i++) {
+    page.drawText(footerTexts[i], {
+      x: marginLeft + i * footerColWidth,
+      y: footerY,
+      size: 9,
+      font,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+  }
 
   let currentPage = page;
   y = kostenplanY - 30;
@@ -479,7 +516,15 @@ app.post('/generate-pdf', async (req, res) => {
         if (fontSize < minFontSize) fontSize = minFontSize;
         let colWidths;
         if (block.table[0].includes('Bezeichnung')) {
-          colWidths = [70, 50, 220, 80, 80];
+          if (block.table[0].length === 6) {
+            // 6 Spalten: z.B. Nummer, Menge, Bezeichnung, Einzelpreis, Gesamtpreis, Bemerkung
+            colWidths = [60, 40, 180, 70, 70, 80];
+          } else {
+            // Standard: 5 Spalten
+            colWidths = [70, 50, 220, 80, 80];
+          }
+        } else if (block.table[0].length === 6) {
+          colWidths = Array(6).fill(maxWidth / 6);
         } else if (block.table[0].length === 5) {
           colWidths = [70, 50, 220, 80, 80];
         } else {
@@ -573,7 +618,15 @@ app.post('/generate-pdf', async (req, res) => {
       if (fontSize < minFontSize) fontSize = minFontSize;
       let colWidths;
       if (block.table[0].includes('Bezeichnung')) {
-        colWidths = [70, 50, 220, 80, 80];
+        if (block.table[0].length === 6) {
+          // 6 Spalten: z.B. Nummer, Menge, Bezeichnung, Einzelpreis, Gesamtpreis, Bemerkung
+          colWidths = [60, 40, 180, 70, 70, 80];
+        } else {
+          // Standard: 5 Spalten
+          colWidths = [70, 50, 220, 80, 80];
+        }
+      } else if (block.table[0].length === 6) {
+        colWidths = Array(6).fill(maxWidth / 6);
       } else if (block.table[0].length === 5) {
         colWidths = [70, 50, 220, 80, 80];
       } else {
@@ -640,16 +693,7 @@ app.post('/generate-pdf', async (req, res) => {
   // === ENDE BODY ===
 
   // === FOOTER: Fußleiste mit 4 Spalten ===
-  for (let i = 0; i < 4; i++) {
-    page.drawText(footerTexts[i], {
-      x: marginLeft + i * footerColWidth,
-      y: footerY,
-      size: 9,
-      font,
-      color: rgb(0.2, 0.2, 0.2),
-    });
-  }
-  // === ENDE FOOTER ===
+  // (Diese Schleife entfällt, da der Footer oben schon gezeichnet wird)
 
 
   const pdfBytes = await pdfDoc.save()
