@@ -729,9 +729,12 @@ app.post('/generate-pdf', async (req, res) => {
   }
 
 
-  res.setHeader('Content-Type', 'application/pdf')
-  res.setHeader('Content-Disposition', 'attachment; filename="kostenplan.pdf"')
-  res.send(Buffer.from(pdfBytes))
+  // === PDF-Download/Antwort temporär deaktiviert ===
+  // Die folgenden drei Zeilen wieder aktivieren, um den PDF-Download zu ermöglichen:
+  // res.setHeader('Content-Type', 'application/pdf')
+  // res.setHeader('Content-Disposition', 'attachment; filename="kostenplan.pdf"')
+  // res.send(Buffer.from(pdfBytes))
+  res.status(200).send('PDF-Download ist vorübergehend deaktiviert.');
 })
 
 const PORT = process.env.PORT || 3002
